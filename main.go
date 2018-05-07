@@ -5,6 +5,7 @@ import (
 	"fmt"
 	dns "github.com/Focinfi/go-dns-resolver"
 	//"log"
+	"crypto/tls"
 	"net/http"
 	"os"
 	"sync"
@@ -15,6 +16,7 @@ type CommandLineConfig struct {
 	host_name          *string
 	use_ssl            *bool
 	check_redirect_ssl *bool
+	check_cert_date    *bool
 }
 
 func (*CommandLineConfig) Parse() {
@@ -29,6 +31,7 @@ var commandLineCfg = CommandLineConfig{
 	host_name:          flag.String("host_name", "localhost", "An FQDN to check"),
 	use_ssl:            flag.Bool("use_ssl", false, "Use SSL"),
 	check_redirect_ssl: flag.Bool("check_redirect_ssl", false, "Check redirect from HTTP to HTTPS"),
+	check_cert_date:    flag.Bool("check_cert_date", false, "Check SSL cert expiration date"),
 }
 
 func redirectChecker(req *http.Request, via []*http.Request) error {
@@ -63,6 +66,36 @@ func main() {
 					},
 					Timeout: 2 * time.Second,
 				}
+				if *commandLineCfg.check_cert_date {
+					tlsConfig := &tls.Config{
+						InsecureSkipVerify: true,
+					}
+					conn, err := tls.Dial("tcp", fmt.Sprintf("%s:443", ip), tlsConfig)
+					if err != nil {
+						fmt.Printf("Err: %v\n", err)
+						dead_ips = append(dead_ips, ip)
+					} else {
+						defer conn.Close()
+					}
+
+					timeNow := time.Now()
+					checkedCerts := make(map[string]struct{})
+					for _, cert := range conn.ConnectionState().PeerCertificates {
+						if _, checked := checkedCerts[string(cert.Signature)]; checked {
+							continue
+						}
+						checkedCerts[string(cert.Signature)] = struct{}{}
+
+						// Check the expiration.
+						if timeNow.AddDate(0, 0, 90).After(cert.NotAfter) {
+							//expiresIn := int64(cert.NotAfter.Sub(timeNow).Hours())
+							dead_ips = append(dead_ips, ip)
+							break
+						}
+					}
+
+					return
+				}
 				if !*commandLineCfg.use_ssl {
 					_, err := client.Get(fmt.Sprintf("http://%s/", ip))
 					if err != nil {
@@ -71,6 +104,12 @@ func main() {
 						if *commandLineCfg.check_redirect_ssl && !redirected {
 							dead_ips = append(dead_ips, ip)
 						}
+					}
+				} else {
+					_, err := client.Get(fmt.Sprintf("https://%s/", ip))
+					if err != nil {
+						fmt.Printf("err: %v\n", err)
+						dead_ips = append(dead_ips, ip)
 					}
 				}
 			}(r.Content)
