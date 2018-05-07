@@ -18,6 +18,7 @@ type CommandLineConfig struct {
 	check_redirect_ssl *bool
 	check_cert_date    *bool
 	cert_warn_days     *int
+	dns_server         *string
 }
 
 func (*CommandLineConfig) Parse() {
@@ -34,6 +35,7 @@ var commandLineCfg = CommandLineConfig{
 	check_redirect_ssl: flag.Bool("check_redirect_ssl", false, "Check redirect from HTTP to HTTPS"),
 	check_cert_date:    flag.Bool("check_cert_date", false, "Check SSL cert expiration date"),
 	cert_warn_days:     flag.Int("cert_warn_days", 90, "Number of days to check before expiration"),
+	dns_server:         flag.String("dns_server", "8.8.8.8", "A DNS server"),
 }
 
 func redirectChecker(req *http.Request, via []*http.Request) error {
@@ -54,7 +56,7 @@ func main() {
 	dead_ips := make([]string, 0)
 	var wg sync.WaitGroup
 
-	if results, err := dns.Exchange(*commandLineCfg.host_name, "8.8.8.8:53", dns.TypeA); err == nil {
+	if results, err := dns.Exchange(*commandLineCfg.host_name, fmt.Sprintf("%s:53", *commandLineCfg.dns_server), dns.TypeA); err == nil {
 		for _, r := range results {
 			all_ips = append(all_ips, r.Content)
 			wg.Add(1)
