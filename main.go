@@ -17,6 +17,7 @@ type CommandLineConfig struct {
 	use_ssl            *bool
 	check_redirect_ssl *bool
 	check_cert_date    *bool
+	cert_warn_days     *int
 }
 
 func (*CommandLineConfig) Parse() {
@@ -32,6 +33,7 @@ var commandLineCfg = CommandLineConfig{
 	use_ssl:            flag.Bool("use_ssl", false, "Use SSL"),
 	check_redirect_ssl: flag.Bool("check_redirect_ssl", false, "Check redirect from HTTP to HTTPS"),
 	check_cert_date:    flag.Bool("check_cert_date", false, "Check SSL cert expiration date"),
+	cert_warn_days:     flag.Int("cert_warn_days", 90, "Number of days to check before expiration"),
 }
 
 func redirectChecker(req *http.Request, via []*http.Request) error {
@@ -87,7 +89,7 @@ func main() {
 						checkedCerts[string(cert.Signature)] = struct{}{}
 
 						// Check the expiration.
-						if timeNow.AddDate(0, 0, 90).After(cert.NotAfter) {
+						if timeNow.AddDate(0, 0, *commandLineCfg.cert_warn_days).After(cert.NotAfter) {
 							//expiresIn := int64(cert.NotAfter.Sub(timeNow).Hours())
 							dead_ips = append(dead_ips, ip)
 							break
